@@ -96,9 +96,9 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
     }
     else if(call.method == "deleteMedium") {
       let arguments = call.arguments as! Dictionary<String, AnyObject>
-      let mediumId = arguments["mediumId"] as! String
-      deleteMedium(
-        mediumId: mediumId,
+      let mediumsToDelete = arguments["mediumToDelete"] as! [[String: String?]]
+      deleteMediums(
+        mediums: mediumsToDelete,
         completion: { (success: Bool, error: Error?) -> Void in
           result(success)
         }
@@ -241,7 +241,7 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
     let assets: PHFetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [mediumId], options: fetchOptions)
 
     if (assets.count <= 0) {
-      throw NSError(domain: "photo_gallery", code: 404)
+      throw NSError(domain: "photo_gallery_flutter", code: 404)
     } else {
       let asset: PHAsset = assets[0]
       return getMediumFromAsset(asset: asset)
@@ -282,7 +282,7 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
         options: options,
         resultHandler: { (uiImage: UIImage?, info) in
           guard let image = uiImage else {
-            completion(nil, NSError(domain: "photo_gallery", code: 404, userInfo: nil))
+            completion(nil, NSError(domain: "photo_gallery_flutter", code: 404, userInfo: nil))
             return
           }
           let bytes = image.jpegData(compressionQuality: CGFloat(70))
@@ -292,7 +292,7 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
       return
     }
 
-    completion(nil, NSError(domain: "photo_gallery", code: 404, userInfo: nil))
+    completion(nil, NSError(domain: "photo_gallery_flutter", code: 404, userInfo: nil))
   }
 
   private func getAlbumThumbnail(
@@ -349,7 +349,7 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
         options: options,
         resultHandler: { (uiImage: UIImage?, info) in
           guard let image = uiImage else {
-            completion(nil, NSError(domain: "photo_gallery", code: 404, userInfo: nil))
+            completion(nil, NSError(domain: "photo_gallery_flutter", code: 404, userInfo: nil))
             return
           }
           let bytes = image.jpegData(compressionQuality: CGFloat(80))
@@ -359,7 +359,7 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
       return
     }
 
-    completion(nil, NSError(domain: "photo_gallery", code: 404, userInfo: nil))
+    completion(nil, NSError(domain: "photo_gallery_flutter", code: 404, userInfo: nil))
   }
 
   private func getFile(mediumId: String, mimeType: String?, completion: @escaping (String?, Error?) -> Void) {
@@ -386,18 +386,18 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
           resultHandler: { (data: Data?, uti: String?, orientation, info) in
             DispatchQueue.main.async(execute: {
               guard let imageData = data else {
-                completion(nil, NSError(domain: "photo_gallery", code: 404, userInfo: nil))
+                completion(nil, NSError(domain: "photo_gallery_flutter", code: 404, userInfo: nil))
                 return
               }
               guard let assetUTI = uti else {
-                completion(nil, NSError(domain: "photo_gallery", code: 404, userInfo: nil))
+                completion(nil, NSError(domain: "photo_gallery_flutter", code: 404, userInfo: nil))
                 return
               }
               if mimeType != nil {
                 let type = self.extractMimeTypeFromUTI(uti: assetUTI)
                 if type != mimeType {
                   let path = self.cacheImage(asset: asset, data: imageData, mimeType: mimeType!)
-                  completion(path, NSError(domain: "photo_gallery", code: 404, userInfo: nil))
+                  completion(path, NSError(domain: "photo_gallery_flutter", code: 404, userInfo: nil))
                   return
                 }
               }
@@ -427,7 +427,7 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
                 try! data.write(to: filepath, options: .atomic)
                 completion(filepath.absoluteString, nil)
               } catch {
-                completion(nil, NSError(domain: "photo_gallery", code: 500, userInfo: nil))
+                completion(nil, NSError(domain: "photo_gallery_flutter", code: 500, userInfo: nil))
               }
             })
           }
@@ -614,27 +614,50 @@ public class PhotoGalleryFlutterPlugin: NSObject, FlutterPlugin {
 
   private func cachePath() -> URL {
     let paths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
-    let cacheFolder = paths[0].appendingPathComponent("photo_gallery")
+    let cacheFolder = paths[0].appendingPathComponent("photo_gallery_flutter")
     try! FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true, attributes: nil)
     return cacheFolder
   }
 
-  private func deleteMedium(mediumId: String, completion: @escaping (Bool, Error?) -> Void) {
-    let fetchOptions = PHFetchOptions()
-    if #available(iOS 9, *) {
-      fetchOptions.fetchLimit = 1
-    }
-    let assets: PHFetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [mediumId], options: fetchOptions)
+  private func deleteMediums(mediums: [[String: String?]], completion: @escaping (Bool, Error?) -> Void) {
+      // Prepare the PHFetchOptions
+      let fetchOptions = PHFetchOptions()
+      if #available(iOS 9, *) {
+          fetchOptions.fetchLimit = 1
+      }
 
-    if assets.count <= 0 {
-      completion(false, NSError(domain: "photo_gallery", code: 404, userInfo: nil))
-    } else {
-      let asset: PHAsset = assets[0]
+      var assetsToDelete: [PHAsset] = []
+
+      // Iterate over the list of maps (each map represents a medium)
+      for medium in mediums {
+          // Ensure mediumId exists and is a non-nil value
+          if let mediumId = medium["mediumId"] ?? medium["mediumId"] as? String {
+              // Fetch the asset using the mediumId
+              let assets = PHAsset.fetchAssets(withLocalIdentifiers: [mediumId], options: fetchOptions)
+
+              if assets.count > 0 {
+                  let asset = assets[0]
+                  assetsToDelete.append(asset)
+              } else {
+                  // If any asset is not found, call completion with an error
+                  completion(false, NSError(domain: "photo_gallery_flutter", code: 404, userInfo: ["mediumId": mediumId]))
+                  return
+              }
+          } else {
+              // If mediumId is missing or invalid, call completion with an error
+              completion(false, NSError(domain: "photo_gallery_flutter", code: 400, userInfo: ["error": "mediumId missing or invalid"]))
+              return
+          }
+      }
+
+      // Perform changes to delete all found assets
       PHPhotoLibrary.shared().performChanges({
-        PHAssetChangeRequest.deleteAssets([asset] as NSFastEnumeration)
-      }, completionHandler: completion)
-    }
+          PHAssetChangeRequest.deleteAssets(assetsToDelete as NSFastEnumeration)
+      }, completionHandler: { success, error in
+          completion(success, error)
+      })
   }
+
 
   private func cleanCache() {
     try? FileManager.default.removeItem(at: self.cachePath())

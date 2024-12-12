@@ -1,6 +1,6 @@
 package io.flutter.plugin.photo_gallery_flutter
 
-
+import android.net.Uri
 import android.app.Activity
 import android.app.RecoverableSecurityException
 import android.content.ContentResolver
@@ -206,11 +206,10 @@ class PhotoGalleryFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAwar
       }
 
       "deleteMedium" -> {
-        val mediumId = call.argument<String>("mediumId")
-        val mediumType = call.argument<String>("mediumType")
+        val mediumId = call.argument<List<Map<String, String>>>("mediumToDelete")
         executor.submit {
           result.success(
-            deleteMedium(mediumId!!, mediumType)
+            deleteMediums(mediumId!!)
           )
         }
       }
@@ -1157,23 +1156,50 @@ class PhotoGalleryFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAwar
       return@run cachePath
     }
   }
+  private fun deleteMediums(mediums: List<Map<String, String>>) {
+    // Collect all the URIs to delete based on the type (image or video)
+    val urisToDelete = mutableListOf<Uri>()
 
-  private fun deleteMedium(mediumId: String, mediumType: String?) {
-    when (mediumType) {
-      imageType -> {
-        deleteImageMedium(mediumId)
+    // Iterate over the list of mediums and collect URIs based on medium type
+    mediums.forEach { medium ->
+      val mediumId = medium["mediumId"] ?: return@forEach
+      val mediumType = medium["mediumType"] ?: return@forEach
+
+      when (mediumType) {
+        "image" -> {
+          urisToDelete.add(ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, mediumId.toLong()))
+        }
+        "video" -> {
+          urisToDelete.add(ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, mediumId.toLong()))
+        }
       }
+    }
 
-      videoType -> {
-        deleteVideoMedium(mediumId)
-      }
-
-      else -> {
-        deleteImageMedium(mediumId)
-        deleteVideoMedium(mediumId)
+    // Open the permission dialog once for all items (if SDK > Q)
+    context.run {
+      if (Build.VERSION.SDK_INT > Build.VERSION_CODES.Q) {
+        val pendingIntent = MediaStore.createTrashRequest(
+          this.contentResolver,
+          urisToDelete,
+          true
+        )
+        activity?.startIntentSenderForResult(
+          pendingIntent.intentSender,
+          0,
+          null,
+          0,
+          0,
+          0
+        )
+      } else {
+        // Proceed to delete the items if the SDK is lower than Q
+        urisToDelete.forEach { uri ->
+          this.contentResolver.delete(uri, null, null)
+        }
       }
     }
   }
+
 
 
   private fun deleteImageMedium(mediumId: String) {

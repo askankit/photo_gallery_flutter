@@ -32,3 +32,10 @@ MediumType? jsonToMediumType(String? value) {
       return null;
   }
 }
+
+class MediumToDelete {
+  final String id;
+  final MediumType? mediumType;
+
+  MediumToDelete(this.id, this.mediumType);
+}

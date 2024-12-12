@@ -142,13 +142,19 @@ class PhotoGalleryFlutter {
   /// mediumId: the identifier of medium
   /// mediumType: the type of medium
   static Future<void> deleteMedium({
-    required String mediumId,
-    MediumType? mediumType,
+    required List<MediumToDelete> mediumToDelete,
   }) async {
-    await _channel.invokeMethod('deleteMedium', {
-      'mediumId': mediumId,
-      'mediumType': mediumTypeToJson(mediumType),
-    });
+    try {
+      List<Map<String, String?>> mediumIdList = mediumToDelete
+          .map((e) =>
+              {"mediumId": e.id, "mediumType": mediumTypeToJson(e.mediumType)})
+          .toList();
+      await _channel.invokeMethod('deleteMedium', {
+        'mediumToDelete': mediumIdList,
+      });
+    } catch (e) {
+      print(e);
+    }
   }
 
   /// Clean medium file cache
